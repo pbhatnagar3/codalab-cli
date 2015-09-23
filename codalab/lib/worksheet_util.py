@@ -504,7 +504,7 @@ def interpret_items(schemas, items):
     schemas: initial mapping from name to list of schema items (columns of a table)
     items: list of worksheet items (triples) to interpret
     Return a list of interpreted items, where each item is either:
-    - ('markup'|'inline'|'contents'|'image'|'html', rendered string | (bundle_uuid, genpath, properties))
+    - ('markup'|'contents'|'image'|'html', rendered string | (bundle_uuid, genpath, properties))
     - ('record'|'table', (col1, ..., coln), [{col1:value1, ... coln:value2}, ...]),
       where value is either a rendered string or a (bundle_uuid, genpath, post) tuple
     - ('search', [keyword, ...])
@@ -547,7 +547,7 @@ def interpret_items(schemas, items):
                     'properties': properties,
                     'bundle_info': copy.deepcopy(bundle_info)
                 })
-        elif mode == 'inline' or mode == 'contents' or mode == 'image' or mode == 'html':
+        elif mode == 'contents' or mode == 'image' or mode == 'html':
             for bundle_info in bundle_infos:
                 if is_missing(bundle_info):
                     continue
@@ -563,8 +563,6 @@ def interpret_items(schemas, items):
                     bundle_uuid, genpath = interpreted
                     if not is_file_genpath(genpath):
                         raise UsageError('Expected a file genpath, but got %s' % genpath)
-                    if mode == 'inline':
-                        interpreted = (bundle_uuid, genpath, None)
                     else:
                         # interpreted is a target: strip off the leading /
                         interpreted = (bundle_uuid, genpath[1:])
