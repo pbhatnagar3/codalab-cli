@@ -124,13 +124,13 @@ def get_worksheet_lines(worksheet_info):
     '''
     Generator that returns pretty-printed lines of text for the given worksheet.
     '''
-    header = '''
-// Editing worksheet %s(%s).
-// https://github.com/codalab/codalab/wiki/User_Worksheet-Markdown
-//
-    '''.strip() % (worksheet_info['name'], worksheet_info['uuid'],)
-    lines = header.split('\n')
-
+#     header = '''
+# // Editing worksheet %s(%s).
+# // https://github.com/codalab/codalab/wiki/User_Worksheet-Markdown
+# //
+#     '''.strip() % (worksheet_info['name'], worksheet_info['uuid'],)
+#     lines = header.split('\n')
+    lines = []
     for (bundle_info, subworksheet_info, value_obj, item_type) in worksheet_info['items']:
         if item_type == TYPE_MARKUP:
             lines.append(value_obj)
@@ -565,6 +565,7 @@ def interpret_items(schemas, items):
     current_display_ref = [default_display]
     new_items = []
     bundle_infos = []
+    raw_interpreted_item_map = {}
     def get_schema(args):  # args is a list of schema names
         args = args if len(args) > 0 else ['default']
         schema = []
@@ -585,8 +586,12 @@ def interpret_items(schemas, items):
         if mode == 'hidden':
             pass
         elif mode == 'contents' or mode == 'image' or mode == 'html':
-            for bundle_info in bundle_infos:
+            for (i, bundle_info) in bundle_infos:
+                print "*"*10, 'BUNDLE_INFO', '*'*10
+                print bundle_info
+                print '-'*30
                 if is_missing(bundle_info):
+                    raw_interpreted_item_map[i] = 'MISSING'
                     continue
 
                 # Result: either a string (rendered) or (bundle_uuid, genpath, properties) triple
@@ -609,13 +614,14 @@ def interpret_items(schemas, items):
                     'properties': properties,
                     'bundle_info': copy.deepcopy(bundle_info)
                 })
+                raw_interpreted_item_map[i] = interpreted
         elif mode == 'record':
             # display record schema =>
             # key1: value1
             # key2: value2
             # ...
             schema = get_schema(args)
-            for bundle_info in bundle_infos:
+            for (item, bundle_info) in bundle_infos:
                 header = ('key', 'value')
                 rows = []
                 for (name, genpath, post) in schema:
@@ -629,6 +635,7 @@ def interpret_items(schemas, items):
                     'properties': properties,
                     'bundle_info': copy.deepcopy(bundle_info)
                 })
+                raw_interpreted_item_map[i] = (header, rows)
         elif mode == 'table':
             # display table schema =>
             # key1       key2
@@ -637,7 +644,7 @@ def interpret_items(schemas, items):
             schema = get_schema(args)
             header = tuple(name for (name, genpath, post) in schema)
             rows = []
-            for bundle_info in bundle_infos:
+            for (i, bundle_info) in bundle_infos:
                 if 'metadata' not in bundle_info:
                     continue
                 rows.append({name: apply_func(post, interpret_genpath(bundle_info, genpath)) for (name, genpath, post) in schema})
@@ -645,8 +652,9 @@ def interpret_items(schemas, items):
                     'mode': mode,
                     'interpreted': (header, rows),
                     'properties': properties,
-                    'bundle_info': copy.deepcopy(bundle_infos)
+                    'bundle_info': copy.deepcopy([b[1] for b in bundle_infos])
                 })
+            raw_interpreted_item_map[i] = (header, rows)
         else:
             raise UsageError('Unknown display mode: %s' % mode)
         bundle_infos[:] = []  # Clear
@@ -660,12 +668,12 @@ def interpret_items(schemas, items):
 
     def get_command(value_obj):  # For directives only
         return value_obj[0] if len(value_obj) > 0 else None
-    for item in items:
+    for i, item in enumerate(items):
         (bundle_info, subworksheet_info, value_obj, item_type) = item
         properties = {}
 
         if item_type == TYPE_BUNDLE:
-            bundle_infos.append(bundle_info)
+            bundle_infos.append((i, bundle_info))
         elif item_type == TYPE_WORKSHEET:
             flush()
             new_items.append({
@@ -674,6 +682,7 @@ def interpret_items(schemas, items):
                 'properties': {},
                 'subworksheet_info': subworksheet_info,
             })
+            raw_interpreted_item_map[i] = subworksheet_info
         elif item_type == TYPE_MARKUP:
             flush()
             new_items.append({
@@ -681,7 +690,9 @@ def interpret_items(schemas, items):
                 'interpreted': value_obj,
                 'properties': {},
             })
+            raw_interpreted_item_map[i] = value_obj
         elif item_type == TYPE_DIRECTIVE:
+            raw_interpreted_item_map[i] = None 
             flush()
             command = get_command(value_obj)
             if command == '%' or command == '' or command == None:  # Comment
@@ -710,12 +721,14 @@ def interpret_items(schemas, items):
                     'interpreted': data,
                     'properties': {},
                 })
+                raw_interpreted_item_map[i] = data
             else:
                 new_items.append({
                     'mode': TYPE_MARKUP,
                     'interpreted': 'ERROR: unknown directive **%% %s**' % ' '.join(value_obj),
                     'properties': {},
                 })
+                raw_interpreted_item_map[i] = 'ERROR'
                 #raise UsageError('Unknown directive command in %s' % value_obj)
         else:
             raise InternalError('Unknown worksheet item type: %s' % item_type)
@@ -723,7 +736,7 @@ def interpret_items(schemas, items):
     flush()
     result['items'] = new_items
 
-    return result
+    return (result, raw_interpreted_item_map)
 
 def interpret_genpath_table_contents(client, contents):
     '''
